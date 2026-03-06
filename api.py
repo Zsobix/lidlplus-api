@@ -13,7 +13,10 @@ import hashlib
 from jwkest import b64e
 from secrets import choice
 import uuid
-from playwright.sync_api import sync_playwright
+try:
+    from playwright.sync_api import sync_playwright
+except:
+    print("Playwright not found. Assuming this is currently being used in MSYS")
 import time
 import qrcode
 import random
