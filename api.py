@@ -71,34 +71,6 @@ class LidlPlusApi:
         self._login_url = f"https://accounts.lidl.com/connect/authorize/callback?client_id=LidlPlusNativeClient&response_type=code&scope=openid profile offline_access lpprofile lpapis&redirect_uri=com.lidlplus.app://callback&code_challenge={self._code_challenge["code_challenge"]}&code_challenge_method=S256"
         return self._login_url
 
-    def _init_chrome(self, headless=True):
-        user_agent = UserAgent("iOs".lower()).Random()
-        logging.getLogger("WDM").setLevel(logging.NOTSET)
-        options = webdriver.ChromeOptions()
-        if headless:
-            options.add_argument("headless")
-        options.add_experimental_option("mobileEmulation", {"userAgent": user_agent})
-        for chrome_type in [ChromeType.GOOGLE, ChromeType.MSEDGE, ChromeType.CHROMIUM]:
-            try:
-                service = Service(ChromeDriverManager(chrome_type=chrome_type).install())
-                return webdriver.Chrome(service=service, options=options)
-            except AttributeError:
-                continue
-
-    def _init_firefox(self, headless=True):
-        user_agent = UserAgent("iOs".lower()).Random()
-        logging.getLogger("WDM").setLevel(logging.NOTSET)
-        options = webdriver.FirefoxOptions()
-        if headless:
-            options.headless = True
-        profile = webdriver.FirefoxProfile()
-        profile.set_preference("general.useragent.override", user_agent)
-        return webdriver.Firefox()
-
-    def _get_browser(self, headless=True):
-        #try:
-        #return self._init_chrome(headless=headless)
-        return self._init_firefox(headless=headless)
 
     def _auth(self, payload):
         default_secret = base64.b64encode(f"LidlPlusNativeClient:secret".encode()).decode() # TGlkbFBsdXNOYXRpdmVDbGllbnQ6c2VjcmV0
@@ -142,57 +114,44 @@ class LidlPlusApi:
     def _api_link(self, requested):
         url = f"https://appgateway.lidlplus.com/app/v23/{self._country}/{requested}"
         return url
-        
-    @staticmethod
-    def _accept_legal_terms(browser, wait, accept=True):
-        wait.until(expected_conditions.visibility_of_element_located((By.ID, "checkbox_Accepted"))).click()
-        if not accept:
-            title = browser.find_element(By.TAG_NAME, "h2").text
-        browser.find_element(By.TAG_NAME, "button").click()
 
-    def _parse_code(self, browser, wait, accept_legal_terms=True):
-        for request in reversed(browser.requests):
-            if f"https://accounts.lidl.com/connect" not in request.url:
-                continue
-            location = request.response.headers.get("Location", "")
-            if "legalTerms" in location:
-                self._accept_legal_terms(browser, wait, accept=accept_legal_terms)
-                return self._parse_code(browser, wait, False)
-            if code := re.findall("code=([0-9A-F]+)", location):
-                return code[0]
-        return ""
+    def _parse_code(self, page):
+        with page.expect_response("https://accounts.lidl.com/connect/authorize/**") as response:
+                    authlink = response.value.all_headers()["location"]
+                    authlink = authlink.replace("&", "?")
+                    authlist = authlink.split("?")
+                    authcode = authlist[1].replace("code=", "")
+                    return authcode
 
-    def _click(self, browser, button, request=""):
-        del browser.requests
-        browser.backend.storage.clear_requests()
-        browser.find_element(*button).click()
-        self._check_input_error(browser)
-        if request and browser.wait_for_request(request, 10):
-            self._check_input_error(browser)
+    #@staticmethod
+    #def _accept_legal_terms(browser, wait, accept=True):
+    #    wait.until(expected_conditions.visibility_of_element_located((By.ID, "checkbox_Accepted"))).click()
+    #    if not accept:
+    #        title = browser.find_element(By.TAG_NAME, "h2").text
+    #    browser.find_element(By.TAG_NAME, "button").click()
 
-    @staticmethod
-    def _check_input_error(browser):
-        if errors := browser.find_elements(By.CLASS_NAME, "input-error-message"):
-            for error in errors:
-                if error.text:
-                    raise LoginError(error.text)
+    #@staticmethod
+    #def _check_input_error(browser):
+    #    if errors := browser.find_elements(By.CLASS_NAME, "input-error-message"):
+    #        for error in errors:
+    #            if error.text:
+    #                raise LoginError(error.text)
 
-    def _check_login_error(self, browser):
-        response = browser.wait_for_request(f"https://accounts.lidl.com/Account/Login.*", 10).response
-        body = html.unescape(decode(response.body, response.headers.get("Content-Encoding", "identity")).decode())
-        if error := re.findall('app-errors="\\{[^:]*?:.(.*?).}', body):
-            raise LoginError(error[0])
+    def _check_login_error(self, response):
+        regx = re.search(r"https:\/\/accounts.lidl.com\/Account\/Login.*", response.request.redirected_from.redirected_to.url)
+        if not regx:
+                raise Exception("LoginError")
 
-    def _check_2fa_auth(self, browser, wait, verify_mode="phone", verify_token_func=None):
-        if verify_mode not in ["phone", "email"]:
-            raise ValueError(f'Unknown 2fa-mode "{verify_mode}" - Only "phone" or "email" supported')
-        response = browser.wait_for_request(f"https://accounts.lidl.com/Account/Login.*", 10).response
-        if "/connect/authorize/callback" not in response.headers.get("Location"):
-            element = wait.until(expected_conditions.visibility_of_element_located((By.CLASS_NAME, verify_mode)))
-            element.find_element(By.TAG_NAME, "button").click()
-            verify_code = verify_token_func()
-            browser.find_element(By.NAME, "VerificationCode").send_keys(verify_code)
-            self._click(browser, (By.CLASS_NAME, "role_next"))
+    #def _check_2fa_auth(self, browser, wait, verify_mode="phone", verify_token_func=None):
+    #    if verify_mode not in ["phone", "email"]:
+    #        raise ValueError(f'Unknown 2fa-mode "{verify_mode}" - Only "phone" or "email" supported')
+    #    response = browser.wait_for_request(f"https://accounts.lidl.com/Account/Login.*", 10).response
+    #    if "/connect/authorize/callback" not in response.headers.get("Location"):
+    #        element = wait.until(expected_conditions.visibility_of_element_located((By.CLASS_NAME, verify_mode)))
+    #        element.find_element(By.TAG_NAME, "button").click()
+    #        verify_code = verify_token_func()
+    #        browser.find_element(By.NAME, "VerificationCode").send_keys(verify_code)
+    #        self._click(browser, (By.CLASS_NAME, "role_next"))
 
     def login(self, email, password, **kwargs):
         """Simulate app auth"""
@@ -201,7 +160,6 @@ class LidlPlusApi:
             page = browser.new_page()
             response = page.goto(self._register_link)
             page.wait_for_timeout(random.randint(476, 975))
-            #wait.until(expected_conditions.visibility_of_element_located((By.ID, "button_welcome_login"))).click()
             page.get_by_test_id("button-primary").click()
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("input-email").fill(email)
@@ -211,14 +169,8 @@ class LidlPlusApi:
             page.get_by_test_id("login-input-password").fill(password)
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("button-primary").click()
-            regx = re.search(r"https:\/\/accounts.lidl.com\/Account\/Login.*", response.request.redirected_from.redirected_to.url)
-            if not regx:
-                    raise Exception("LoginError")
-            with page.expect_response("https://accounts.lidl.com/connect/authorize/**") as response:
-                    authlink = response.value.all_headers()["location"]
-                    authlink = authlink.replace("&", "?")
-                    authlist = authlink.split("?")
-                    authcode = authlist[1].replace("code=", "")
+            self._check_login_error(response)
+            authcode = self._parse_code(page)
             browser.close()
             self._authorization_code(authcode)
 
