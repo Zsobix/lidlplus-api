@@ -276,17 +276,14 @@ class LidlPlusApi:
 
     def coupons(self, store_id):
         url = "https://coupons.lidlplus.com/app/api/v4/promotionslist"
-        headers = self._default_headers(requiresCountryAndStoreID=True, store_id=store_id)
-        # segmented/personalized coupons ("Family Club" in DE) only come back
-        # when the user's segment ids are sent along; without this header the
-        # server silently drops them
-        try:
-            segments = self.get_segments()
-            if isinstance(segments, list) and segments:
-                headers["segment-ids"] = ",".join(str(s) for s in segments)
-        except Exception:
-            pass  # fall back to the non-segmented list
-        return requests.get(url, headers=headers, timeout=10).json()
+
+        kwargs = {"headers": self._default_headers(requiresCountryAndStoreID=True, store_id=store_id), "timeout": 10}
+        
+        # the lidl servers only returns personalised coupons if a "segment-ids" header is given
+        segments = self.get_segments()
+        if isinstance(segments, list):
+            kwargs["headers"]["Segment-ids"] = ",".join(str(segment) for segment in segments)
+        return requests.get(url, **kwargs).json()
 
     def activate_coupon(self, coupon_id):
         url = f"https://coupons.lidlplus.com/app/api/v2/promotions/{coupon_id}/activation" # id in response
