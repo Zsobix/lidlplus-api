@@ -270,9 +270,19 @@ class LidlPlusApi:
         kwargs = {"headers": self._default_headers(), "timeout": 10}
         return requests.get(url, **kwargs).json()
 
+    def get_segments(self):
+        url = f"https://segments.lidlplus.com/api/v1/usersegments/{self._country}"
+        return requests.get(url, headers=self._default_headers(), timeout=10).json()
+
     def coupons(self, store_id):
         url = "https://coupons.lidlplus.com/app/api/v4/promotionslist"
+
         kwargs = {"headers": self._default_headers(requiresCountryAndStoreID=True, store_id=store_id), "timeout": 10}
+        
+        # the lidl servers only returns personalised coupons if a "segment-ids" header is given
+        segments = self.get_segments()
+        if isinstance(segments, list):
+            kwargs["headers"]["Segment-ids"] = ",".join(str(segment) for segment in segments)
         return requests.get(url, **kwargs).json()
 
     def activate_coupon(self, coupon_id):
