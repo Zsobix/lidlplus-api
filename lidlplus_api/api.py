@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 import string
 import requests
 import hashlib
-from jwkest import b64e
 from secrets import choice
 import uuid
 try:
@@ -49,11 +48,9 @@ class LidlPlusApi:
 
             try:
                 _h = hashlib.sha256(_cv).digest()
-                code_challenge = b64e(_h).decode("ascii")
+                code_challenge = base64.urlsafe_b64encode(_h).rstrip(b"=").decode("ascii")
             except KeyError:
                 raise Unsupported("PKCE Transformation method:{}".format(_method)) from None
-
-            # TODO store code_verifier
 
             return (
                 {"code_challenge": code_challenge, "code_challenge_method": _method},
@@ -155,15 +152,20 @@ class LidlPlusApi:
             page = browser.new_page()
             response = page.goto(self._register_link)
             page.wait_for_timeout(random.randint(476, 975))
-            page.get_by_test_id("button-primary").click()
+            page.get_by_test_id("input-email").click()
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("input-email").fill(email)
+            page.wait_for_timeout(random.randint(476, 975))
+            page.get_by_test_id("login-or-register-submit-button").click()
+            page.wait_for_timeout(random.randint(476, 975))
+            page.get_by_test_id("login-input-password").click()
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("login-input-password").click()
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("login-input-password").fill(password)
             page.wait_for_timeout(random.randint(476, 975))
             page.get_by_test_id("button-primary").click()
+            page.wait_for_timeout(random.randint(476, 975))
             self._check_login_error(response)
             authcode = self._parse_code(page)
             browser.close()
@@ -181,7 +183,7 @@ class LidlPlusApi:
                 "Operating-System": "Android",
                 "App": "com.lidl.eci.lidlplus",
                 "Accept-Language": self._language,
-                "User-Agent": "okhttp/5.3.2",
+                "User-Agent": "okhttp/5.4.0",
                 "OS-Version": "16",
                 "Model": "sdk_gphone64_x86_64",
                 "Brand": "Google",
@@ -196,7 +198,7 @@ class LidlPlusApi:
                 "Operating-System": "Android",
                 "App": "com.lidl.eci.lidlplus",
                 "Accept-Language": self._language,
-                "User-Agent": "okhttp/5.3.2",
+                "User-Agent": "okhttp/5.4.0",
                 "OS-Version": "16",
                 "Model": "sdk_gphone64_x86_64",
                 "Brand": "Google",
@@ -211,7 +213,7 @@ class LidlPlusApi:
                 "Operating-System": "Android",
                 "App": "com.lidl.eci.lidlplus",
                 "Accept-Language": self._language,
-                "User-Agent": "okhttp/5.3.2",
+                "User-Agent": "okhttp/5.4.0",
                 "OS-Version": "16",
                 "Model": "sdk_gphone64_x86_64",
                 "Brand": "Google",
@@ -231,7 +233,7 @@ class LidlPlusApi:
                 "Operating-System": "Android",
                 "App": "com.lidl.eci.lidlplus",
                 "Accept-Language": self._language,
-                "User-Agent": "okhttp/5.3.2",
+                "User-Agent": "okhttp/5.4.0",
                 "OS-Version": "16",
                 "Model": "sdk_gphone64_x86_64",
                 "Brand": "Google",
@@ -245,7 +247,7 @@ class LidlPlusApi:
                 "Operating-System": "Android",
                 "App": "com.lidl.eci.lidlplus",
                 "Accept-Language": self._language,
-                "User-Agent": "okhttp/5.3.2",
+                "User-Agent": "okhttp/5.4.0",
                 "OS-Version": "16",
                 "Model": "sdk_gphone64_x86_64",
                 "Brand": "Google",
@@ -284,6 +286,10 @@ class LidlPlusApi:
         if isinstance(segments, list):
             kwargs["headers"]["Segment-ids"] = ",".join(str(segment) for segment in segments)
         return requests.get(url, **kwargs).json()
+
+    def get_segments(self):
+        url = f"https://segments.lidlplus.com/api/v1/usersegments/{self._country}"
+        return requests.get(url, headers=self._default_headers(), timeout=10).json()
 
     def activate_coupon(self, coupon_id):
         url = f"https://coupons.lidlplus.com/app/api/v2/promotions/{coupon_id}/activation" # id in response
